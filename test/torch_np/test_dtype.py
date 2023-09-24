@@ -3,6 +3,9 @@
 from unittest import expectedFailure as xfail
 
 import numpy
+import torch
+import torch._dynamo
+import torch._dynamo.testing
 
 import torch._numpy as tnp
 
@@ -57,6 +60,35 @@ class TestConvertDType(TestCase):
             assert name.startswith("bool")
         else:
             assert tnp_dtype.name == name
+
+
+@instantiate_parametrized_tests
+class TestDTypesUnderDynamo(TestCase):
+
+    @parametrize("dt", [subtest(float, name='py_float'),
+                        subtest(numpy.float64, name='np.float64'),
+                        subtest('float64', name="'float64'"),
+                        subtest(numpy.dtype('float64'), name="dtype('float64')"),
+                        # short floats
+                        'float32',
+                        subtest(numpy.float32, name='numpy.float32'),
+                        subtest(numpy.dtype('float32'), name="dtype('float32'"),
+                        # integers
+                        subtest('int', name='str_int'),
+                        subtest(int, name='py_int'),
+                        subtest(numpy.intp, name='np.intp'),
+                        subtest(numpy.int32, name='np.int32'),
+                        subtest(numpy.uint8, name='np.uint8')])
+    def test_with_dtype(self, dt):
+        def fn(dt):
+            return numpy.arange(5, dtype=dt)
+
+        cnts = torch._dynamo.testing.CompileCounter()
+        opt_fn = torch._dynamo.optimize(cnts, nopython=True)(fn)
+
+        r = opt_fn(dt)
+        assert cnts.frame_count == 1, f"frame_count = {cnts.frame_count}"
+
 
 
 if __name__ == "__main__":
